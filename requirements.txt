@@ -1,0 +1,12 @@
+torch
+torch-geometric
+transformers
+networkx
+pandas
+numpy
+fastapi
+uvicorn
+python-whois
+Pillow
+requests
+tqdm

@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HGNN Phishing Detection</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --danger: #ef4444;
+            --success: #10b981;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.15) 0px, transparent 50%);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 90%;
+            margin-top: 4rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .glass-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            margin-bottom: 2rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        select {
+            width: 100%;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            font-family: inherit;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        select:focus {
+            border-color: var(--primary);
+        }
+
+        button {
+            width: 100%;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.1s ease;
+        }
+
+        button:hover {
+            background-color: var(--primary-hover);
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .result-container {
+            display: none;
+            text-align: center;
+            animation: fadeIn 0.5s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .prediction-badge {
+            display: inline-block;
+            padding: 0.5rem 1.5rem;
+            border-radius: 2rem;
+            font-weight: 700;
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .malicious {
+            background-color: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+
+        .benign {
+            background-color: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+
+        .confidence-bar-bg {
+            background: rgba(255, 255, 255, 0.1);
+            height: 12px;
+            border-radius: 6px;
+            overflow: hidden;
+            margin: 1rem 0;
+        }
+
+        .confidence-bar-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+            width: 0%;
+        }
+
+        .confidence-text {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .node-info {
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+            font-family: monospace;
+        }
+        
+        .xai-container {
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: left;
+        }
+
+        .xai-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-main);
+            margin-bottom: 1rem;
+        }
+
+        .xai-feature {
+            margin-bottom: 1rem;
+        }
+
+        .xai-feature-name {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 0.25rem;
+        }
+
+        .xai-bar-bg {
+            background: rgba(255, 255, 255, 0.05);
+            height: 6px;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .xai-bar-fill {
+            height: 100%;
+            background-color: var(--primary);
+            border-radius: 3px;
+            transition: width 1s ease-out;
+            width: 0%;
+        }
+
+        .loader {
+            display: none;
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>HGNN Phishing Detection</h1>
+            <p class="subtitle">Select a node from the Heterogeneous Graph to analyze</p>
+        </header>
+
+        <div class="glass-card">
+            <div class="form-group">
+                <label for="nodeType">Node Type</label>
+                <select id="nodeType" onchange="updateNodeIds()">
+                    <option value="user">User Account</option>
+                    <option value="post">Social Post</option>
+                    <option value="url">URL Link</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="nodeId">Select ID</label>
+                <select id="nodeId">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+
+            <button onclick="runPrediction()" id="predictBtn">
+                <span id="btnText">Analyze Node</span>
+                <div class="loader" id="loader"></div>
+            </button>
+        </div>
+
+        <div class="glass-card result-container" id="resultCard">
+            <div id="predictionBadge" class="prediction-badge">Loading...</div>
+            <div class="confidence-text"><span id="confidenceValue">0</span>% Confidence</div>
+            
+            <div class="confidence-bar-bg">
+                <div class="confidence-bar-fill" id="confidenceBar"></div>
+            </div>
+            
+            <div class="node-info">Target: <span id="targetNodeInfo">...</span></div>
+            
+            <div class="xai-container" id="xaiContainer">
+                <div class="xai-title">AI Explanation (Feature Saliency)</div>
+                <div id="xaiFeatures"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let availableNodes = { users: [], posts: [], urls: [] };
+
+        // Fetch nodes on load
+        async function fetchNodes() {
+            try {
+                const response = await fetch('/api/nodes');
+                availableNodes = await response.json();
+                updateNodeIds();
+            } catch (err) {
+                console.error("Failed to load nodes", err);
+                document.getElementById('nodeId').innerHTML = '<option>Error loading nodes</option>';
+            }
+        }
+
+        function updateNodeIds() {
+            const type = document.getElementById('nodeType').value;
+            const select = document.getElementById('nodeId');
+            select.innerHTML = '';
+            
+            let nodes = [];
+            if(type === 'user') nodes = availableNodes.users;
+            if(type === 'post') nodes = availableNodes.posts;
+            if(type === 'url') nodes = availableNodes.urls;
+
+            nodes.forEach(id => {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = id;
+                select.appendChild(opt);
+            });
+        }
+
+        async function runPrediction() {
+            const nodeType = document.getElementById('nodeType').value;
+            const nodeId = document.getElementById('nodeId').value;
+            
+            if(!nodeId) return;
+
+            // UI Loading state
+            document.getElementById('btnText').style.display = 'none';
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('predictBtn').disabled = true;
+            document.getElementById('resultCard').style.display = 'none';
+            document.getElementById('confidenceBar').style.width = '0%';
+
+            try {
+                const response = await fetch(`/api/predict?node_type=${nodeType}&node_id=${encodeURIComponent(nodeId)}`);
+                const data = await response.json();
+
+                if(data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                showResult(data);
+                if (data.explanations) {
+                    showExplanations(data.explanations);
+                } else {
+                    document.getElementById('xaiContainer').style.display = 'none';
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Failed to get prediction");
+            } finally {
+                // Restore UI state
+                document.getElementById('btnText').style.display = 'block';
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('predictBtn').disabled = false;
+            }
+        }
+
+        function showResult(data) {
+            document.getElementById('resultCard').style.display = 'block';
+            
+            const badge = document.getElementById('predictionBadge');
+            const bar = document.getElementById('confidenceBar');
+            
+            badge.textContent = data.prediction;
+            
+            const confPercent = (data.confidence * 100).toFixed(1);
+            document.getElementById('confidenceValue').textContent = confPercent;
+            document.getElementById('targetNodeInfo').textContent = `${data.node_type.toUpperCase()} - ${data.node_id}`;
+
+            // Reset classes
+            badge.className = 'prediction-badge';
+            
+            if(data.prediction === "Malicious") {
+                badge.classList.add('malicious');
+                bar.style.backgroundColor = 'var(--danger)';
+            } else {
+                badge.classList.add('benign');
+                bar.style.backgroundColor = 'var(--success)';
+            }
+
+            // Animate bar
+            setTimeout(() => {
+                bar.style.width = `${confPercent}%`;
+            }, 100);
+        }
+
+        function showExplanations(explanations) {
+            const container = document.getElementById('xaiContainer');
+            const featuresDiv = document.getElementById('xaiFeatures');
+            
+            container.style.display = 'block';
+            featuresDiv.innerHTML = '';
+            
+            explanations.forEach((exp, index) => {
+                const percent = (exp.importance * 100).toFixed(1);
+                
+                const featureHtml = `
+                    <div class="xai-feature">
+                        <div class="xai-feature-name">
+                            <span>${exp.feature}</span>
+                            <span>${percent}%</span>
+                        </div>
+                        <div class="xai-bar-bg">
+                            <div class="xai-bar-fill" id="xai-bar-${index}"></div>
+                        </div>
+                    </div>
+                `;
+                featuresDiv.insertAdjacentHTML('beforeend', featureHtml);
+                
+                // Animate
+                setTimeout(() => {
+                    document.getElementById(`xai-bar-${index}`).style.width = `${percent}%`;
+                }, 200 + (index * 100));
+            });
+        }
+
+        // Init
+        fetchNodes();
+    </script>
+</body>
+</html>
