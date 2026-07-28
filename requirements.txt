@@ -10,3 +10,4 @@ python-whois
 Pillow
 requests
 tqdm
+python-dotenv

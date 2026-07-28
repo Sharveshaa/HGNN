@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HGNN Phishing Detection</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -33,14 +34,14 @@
         }
 
         .container {
-            max-width: 800px;
+            max-width: 1000px;
             width: 90%;
             margin-top: 4rem;
         }
 
         header {
             text-align: center;
-            margin-bottom: 3rem;
+            margin-bottom: 2rem;
         }
 
         h1 {
@@ -49,12 +50,52 @@
             margin-bottom: 0.5rem;
             background: linear-gradient(to right, #60a5fa, #a78bfa);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
         
         p.subtitle {
             color: var(--text-muted);
             font-size: 1.1rem;
+        }
+
+        .tabs {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .tab-btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-muted);
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+
+        .tab-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+            width: 100%;
+        }
+
+        .tab-content.active {
+            display: block;
         }
 
         .glass-card {
@@ -96,36 +137,89 @@
             border-color: var(--primary);
         }
 
-        button {
+        .nodes-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
             width: 100%;
+            margin-bottom: 4rem;
+        }
+
+        @media (max-width: 768px) {
+            .nodes-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .nodes-column {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .nodes-column h2 {
+            margin-top: 0;
+            text-align: center;
+            font-size: 1.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .benign-title { color: var(--success); }
+        .malicious-title { color: var(--danger); }
+
+        .nodes-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            max-height: 500px;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        .nodes-grid::-webkit-scrollbar { width: 6px; }
+        .nodes-grid::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 3px; }
+        .nodes-grid::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+
+        .node-item {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.05);
             padding: 1rem;
             border-radius: 0.5rem;
-            background-color: var(--primary);
-            color: white;
-            border: none;
-            font-size: 1.1rem;
-            font-weight: 600;
             cursor: pointer;
-            transition: background-color 0.3s ease, transform 0.1s ease;
+            transition: transform 0.2s, background 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        button:hover {
-            background-color: var(--primary-hover);
+        .node-item:hover {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
         }
 
-        button:active {
-            transform: scale(0.98);
+        .node-id { 
+            font-family: monospace; 
+            font-size: 1.1rem; 
+            font-weight: 600;
+        }
+        
+        .node-conf { 
+            font-size: 0.9rem; 
+            color: var(--text-muted); 
+            background: rgba(0,0,0,0.2);
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
         }
 
         .result-container {
-            display: none;
             text-align: center;
-            animation: fadeIn 0.5s ease;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
         }
 
         .prediction-badge {
@@ -234,6 +328,81 @@
             100% { transform: rotate(360deg); }
         }
 
+        .modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .modal.show {
+            display: flex;
+            opacity: 1;
+        }
+
+        .modal-content {
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+            transform: translateY(20px);
+            transition: transform 0.3s ease;
+        }
+
+        .modal.show .modal-content {
+            transform: translateY(0);
+        }
+
+        .close-btn {
+            position: absolute;
+            right: 1.5rem;
+            top: 1.5rem;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--text-muted);
+            transition: color 0.2s;
+        }
+
+        .close-btn:hover {
+            color: white;
+        }
+
+        /* Vis Network Container */
+        #networkContainer {
+            width: 100%;
+            height: 600px;
+            border-radius: 1rem;
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .graph-legend {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 1rem;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
     </style>
 </head>
 <body>
@@ -241,97 +410,124 @@
     <div class="container">
         <header>
             <h1>HGNN Phishing Detection</h1>
-            <p class="subtitle">Select a node from the Heterogeneous Graph to analyze</p>
+            <p class="subtitle">Analyze and Visualize Heterogeneous Graphs</p>
         </header>
 
-        <div class="glass-card">
-            <div class="form-group">
-                <label for="nodeType">Node Type</label>
-                <select id="nodeType" onchange="updateNodeIds()">
-                    <option value="user">User Account</option>
-                    <option value="post">Social Post</option>
-                    <option value="url">URL Link</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="nodeId">Select ID</label>
-                <select id="nodeId">
-                    <option value="">Loading...</option>
-                </select>
-            </div>
-
-            <button onclick="runPrediction()" id="predictBtn">
-                <span id="btnText">Analyze Node</span>
-                <div class="loader" id="loader"></div>
-            </button>
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('predictionTab', this)">Prediction Analysis</button>
+            <button class="tab-btn" onclick="switchTab('graphTab', this)">Graph Explorer</button>
         </div>
 
-        <div class="glass-card result-container" id="resultCard">
-            <div id="predictionBadge" class="prediction-badge">Loading...</div>
-            <div class="confidence-text"><span id="confidenceValue">0</span>% Confidence</div>
+        <!-- Prediction Analysis Tab -->
+        <div id="predictionTab" class="tab-content active">
+            <div class="glass-card" style="margin-bottom: 2rem;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="nodeType">Node Type</label>
+                    <select id="nodeType" onchange="fetchBatchNodes()">
+                        <option value="" disabled selected>Select a Node Type</option>
+                        <option value="user">User Account</option>
+                        <option value="post">Social Post</option>
+                        <option value="url">URL Link</option>
+                    </select>
+                </div>
+                <div class="loader" id="batchLoader" style="margin-top: 1rem;"></div>
+            </div>
+
+            <div class="nodes-layout" id="nodesLayout" style="display: none;">
+                <div class="nodes-column">
+                    <h2 class="benign-title">Benign Nodes</h2>
+                    <div class="nodes-grid" id="benignList">
+                        <!-- Nodes injected here -->
+                    </div>
+                </div>
+                
+                <div class="nodes-column">
+                    <h2 class="malicious-title">Malicious Nodes</h2>
+                    <div class="nodes-grid" id="maliciousList">
+                        <!-- Nodes injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Graph Explorer Tab -->
+        <div id="graphTab" class="tab-content">
+            <div class="glass-card">
+                <div class="graph-legend">
+                    <div class="legend-item"><div class="legend-color" style="background: #3b82f6;"></div> User</div>
+                    <div class="legend-item"><div class="legend-color" style="background: #8b5cf6;"></div> Post</div>
+                    <div class="legend-item"><div class="legend-color" style="background: #10b981;"></div> URL</div>
+                </div>
+                
+                <div class="loader" id="graphLoader" style="display: block; margin: 2rem auto;"></div>
+                <div id="networkContainer" style="visibility: hidden;"></div>
+                
+                <div id="graphDescription" style="margin-top: 1.5rem; color: var(--text-muted); font-size: 0.95rem; line-height: 1.5; padding: 1.5rem; background: rgba(255,255,255,0.03); border-radius: 0.5rem; border-left: 4px solid var(--primary); display: none;">
+                    <strong style="color: var(--text-main); display: block; margin-bottom: 0.5rem;">About this Graph</strong> 
+                    This visualization displays the complete structure of the Heterogeneous Graph. Nodes represent different entities (Users, Posts, and URLs). The edges show their relationships, such as users following other users, users sharing posts, and posts containing URLs. By modeling these complex, interconnected interactions, the HGNN can detect coordinated malicious behavior and spam campaigns that traditional isolated models might miss.
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- XAI Modal -->
+    <div class="modal" id="xaiModal">
+        <div class="modal-content glass-card result-container">
+            <span class="close-btn" onclick="closeModal()">&times;</span>
             
-            <div class="confidence-bar-bg">
+            <div id="predictionBadge" class="prediction-badge">Loading...</div>
+            <div class="confidence-text" id="confidenceTextContainer" style="display: none;"><span id="confidenceValue">0</span>% Confidence</div>
+            
+            <div class="confidence-bar-bg" id="confidenceBarContainer" style="display: none;">
                 <div class="confidence-bar-fill" id="confidenceBar"></div>
             </div>
             
-            <div class="node-info">Target: <span id="targetNodeInfo">...</span></div>
+            <div class="node-info" id="nodeInfoContainer" style="display: none;">Target: <span id="targetNodeInfo">...</span></div>
             
-            <div class="xai-container" id="xaiContainer">
+            <div class="loader" id="xaiLoader" style="margin: 2rem auto;"></div>
+
+            <div class="xai-container" id="xaiContainer" style="display: none;">
                 <div class="xai-title">AI Explanation (Feature Saliency)</div>
                 <div id="xaiFeatures"></div>
+            </div>
+            
+            <div class="xai-container" id="subgraphContainer" style="display: none; margin-top: 1rem;">
+                <div class="xai-title">Local Neighborhood Graph (Guilt by Association)</div>
+                <div id="subgraphNetwork" style="width: 100%; height: 350px; background: rgba(0,0,0,0.2); border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.1);"></div>
             </div>
         </div>
     </div>
 
     <script>
-        let availableNodes = { users: [], posts: [], urls: [] };
+        // Tab Switching
+        function switchTab(tabId, btn) {
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            
+            document.getElementById(tabId).classList.add('active');
+            btn.classList.add('active');
 
-        // Fetch nodes on load
-        async function fetchNodes() {
-            try {
-                const response = await fetch('/api/nodes');
-                availableNodes = await response.json();
-                updateNodeIds();
-            } catch (err) {
-                console.error("Failed to load nodes", err);
-                document.getElementById('nodeId').innerHTML = '<option>Error loading nodes</option>';
+            if (tabId === 'graphTab' && !networkLoaded) {
+                loadGraph();
             }
         }
 
-        function updateNodeIds() {
-            const type = document.getElementById('nodeType').value;
-            const select = document.getElementById('nodeId');
-            select.innerHTML = '';
-            
-            let nodes = [];
-            if(type === 'user') nodes = availableNodes.users;
-            if(type === 'post') nodes = availableNodes.posts;
-            if(type === 'url') nodes = availableNodes.urls;
-
-            nodes.forEach(id => {
-                const opt = document.createElement('option');
-                opt.value = id;
-                opt.textContent = id;
-                select.appendChild(opt);
-            });
-        }
-
-        async function runPrediction() {
+        // Fetch batch predictions
+        async function fetchBatchNodes() {
             const nodeType = document.getElementById('nodeType').value;
-            const nodeId = document.getElementById('nodeId').value;
-            
-            if(!nodeId) return;
+            if(!nodeType) return;
 
-            // UI Loading state
-            document.getElementById('btnText').style.display = 'none';
-            document.getElementById('loader').style.display = 'block';
-            document.getElementById('predictBtn').disabled = true;
-            document.getElementById('resultCard').style.display = 'none';
-            document.getElementById('confidenceBar').style.width = '0%';
+            const layout = document.getElementById('nodesLayout');
+            const loader = document.getElementById('batchLoader');
+            const benignList = document.getElementById('benignList');
+            const maliciousList = document.getElementById('maliciousList');
+
+            layout.style.display = 'none';
+            loader.style.display = 'block';
 
             try {
-                const response = await fetch(`/api/predict?node_type=${nodeType}&node_id=${encodeURIComponent(nodeId)}`);
+                const response = await fetch(`/api/batch_predict?node_type=${nodeType}`);
                 const data = await response.json();
 
                 if(data.error) {
@@ -339,36 +535,195 @@
                     return;
                 }
 
-                showResult(data);
-                if (data.explanations) {
-                    showExplanations(data.explanations);
-                } else {
-                    document.getElementById('xaiContainer').style.display = 'none';
-                }
+                renderNodeList(benignList, data.benign, nodeType, false);
+                renderNodeList(maliciousList, data.malicious, nodeType, true);
+
+                layout.style.display = 'grid';
             } catch (err) {
-                console.error(err);
-                alert("Failed to get prediction");
+                console.error("Failed to load batch nodes", err);
+                alert("Error analyzing nodes.");
             } finally {
-                // Restore UI state
-                document.getElementById('btnText').style.display = 'block';
-                document.getElementById('loader').style.display = 'none';
-                document.getElementById('predictBtn').disabled = false;
+                loader.style.display = 'none';
             }
         }
 
-        function showResult(data) {
-            document.getElementById('resultCard').style.display = 'block';
+        function renderNodeList(container, nodes, nodeType, isMalicious) {
+            container.innerHTML = '';
             
+            if (nodes.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 2rem 0;">No nodes found.</div>';
+                return;
+            }
+
+            nodes.forEach(node => {
+                const percent = (node.confidence * 100).toFixed(1);
+                const el = document.createElement('div');
+                el.className = 'node-item';
+                el.onclick = () => openXaiModal(nodeType, node.id);
+                
+                el.innerHTML = `
+                    <div class="node-id">${node.id}</div>
+                    <div class="node-conf">${percent}%</div>
+                `;
+                container.appendChild(el);
+            });
+        }
+
+        // Modal Logic
+        async function openXaiModal(nodeType, nodeId) {
+            const modal = document.getElementById('xaiModal');
+            modal.classList.add('show');
+            
+            document.getElementById('predictionBadge').textContent = 'Loading Analysis...';
+            document.getElementById('predictionBadge').className = 'prediction-badge';
+            document.getElementById('confidenceTextContainer').style.display = 'none';
+            document.getElementById('confidenceBarContainer').style.display = 'none';
+            document.getElementById('nodeInfoContainer').style.display = 'none';
+            document.getElementById('xaiContainer').style.display = 'none';
+            document.getElementById('xaiLoader').style.display = 'block';
+            document.getElementById('xaiContainer').style.display = 'none';
+            document.getElementById('subgraphContainer').style.display = 'none';
+            document.getElementById('confidenceBar').style.width = '0%';
+
+            try {
+                const [predictRes, subgraphRes] = await Promise.all([
+                    fetch(`/api/predict?node_type=${nodeType}&node_id=${encodeURIComponent(nodeId)}`),
+                    fetch(`/api/subgraph?node_type=${nodeType}&node_id=${encodeURIComponent(nodeId)}&hops=2`)
+                ]);
+                
+                const data = await predictRes.json();
+                let subgraphData = null;
+                if(subgraphRes.ok) {
+                    subgraphData = await subgraphRes.json();
+                }
+
+                if(data.error) {
+                    alert(data.error);
+                    closeModal();
+                    return;
+                }
+
+                showModalResult(data);
+                if (data.explanations) {
+                    showExplanations(data.explanations);
+                }
+                
+                if (subgraphData && !subgraphData.error) {
+                    renderSubgraph(subgraphData, `${nodeType}_${nodeId}`);
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Failed to get prediction explanation");
+                closeModal();
+            } finally {
+                document.getElementById('xaiLoader').style.display = 'none';
+            }
+        }
+        
+        let subgraphNetwork = null;
+        
+        function renderSubgraph(data, targetNodeId) {
+            document.getElementById('subgraphContainer').style.display = 'block';
+            const container = document.getElementById('subgraphNetwork');
+            
+            // Process nodes for tooltips and colors
+            data.nodes.forEach(n => {
+                // Build HTML tooltip
+                let tooltip = `<div style="padding: 5px; font-family: sans-serif; color: #1e293b;">`;
+                tooltip += `<strong>${n.group.toUpperCase()}: ${n.label}</strong><br/>`;
+                if (n.status) {
+                    const color = n.status === "Malicious" ? '#dc2626' : '#059669';
+                    tooltip += `Risk: <strong style="color: ${color}">${n.status} (${n.risk_score.toFixed(1)}%)</strong><br/>`;
+                }
+                tooltip += `<hr style="border-top: 1px solid #cbd5e1; margin: 5px 0; border-bottom: none; border-left: none; border-right: none;"/>`;
+                if (n.features) {
+                    for (const [key, val] of Object.entries(n.features)) {
+                        tooltip += `<em>${key}</em>: <strong>${val}</strong><br/>`;
+                    }
+                }
+                tooltip += `</div>`;
+                
+                const tooltipEl = document.createElement('div');
+                tooltipEl.innerHTML = tooltip;
+                n.title = tooltipEl;
+
+                // Apply colors and layout
+                if(n.id === targetNodeId) {
+                    n.borderWidth = 3;
+                    n.color = { border: '#ef4444', background: '#f87171' };
+                    n.font = { size: 16, color: '#fff', bold: true };
+                    n.x = 0;
+                    n.y = 0;
+                    n.fixed = { x: true, y: true }; // Pin to exact center
+                } else if (n.risk_score !== undefined) {
+                    if (n.risk_score > 50) {
+                        n.color = { background: 'rgba(239, 68, 68, 0.6)', border: '#dc2626' }; // Malicious (Red)
+                    } else {
+                        n.color = { background: 'rgba(16, 185, 129, 0.6)', border: '#059669' }; // Benign (Green)
+                    }
+                }
+            });
+            
+            const graphData = {
+                nodes: new vis.DataSet(data.nodes),
+                edges: new vis.DataSet(data.edges)
+            };
+            
+            const options = {
+                nodes: { shape: 'dot', size: 14, font: { color: '#e2e8f0' } },
+                edges: { width: 1, color: { color: 'rgba(255,255,255,0.2)', highlight: '#94a3b8' }, font: { color: '#94a3b8', size: 10, align: 'middle' } },
+                physics: {
+                    barnesHut: { 
+                        gravitationalConstant: -2000, 
+                        centralGravity: 0.1, 
+                        springLength: 100,
+                        springConstant: 0.04
+                    },
+                    stabilization: { iterations: 150 }
+                },
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 200
+                },
+                groups: {
+                    user: { color: { background: '#3b82f6', border: '#2563eb' } },
+                    post: { color: { background: '#10b981', border: '#059669' }, shape: 'box' },
+                    url: { color: { background: '#8b5cf6', border: '#7c3aed' }, shape: 'triangle' }
+                }
+            };
+            
+            if (subgraphNetwork) {
+                subgraphNetwork.destroy();
+            }
+            subgraphNetwork = new vis.Network(container, graphData, options);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('xaiModal');
+            modal.classList.remove('show');
+        }
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('xaiModal');
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+
+        function showModalResult(data) {
             const badge = document.getElementById('predictionBadge');
             const bar = document.getElementById('confidenceBar');
             
+            document.getElementById('confidenceTextContainer').style.display = 'block';
+            document.getElementById('confidenceBarContainer').style.display = 'block';
+            document.getElementById('nodeInfoContainer').style.display = 'block';
+
             badge.textContent = data.prediction;
             
             const confPercent = (data.confidence * 100).toFixed(1);
             document.getElementById('confidenceValue').textContent = confPercent;
             document.getElementById('targetNodeInfo').textContent = `${data.node_type.toUpperCase()} - ${data.node_id}`;
 
-            // Reset classes
             badge.className = 'prediction-badge';
             
             if(data.prediction === "Malicious") {
@@ -379,7 +734,6 @@
                 bar.style.backgroundColor = 'var(--success)';
             }
 
-            // Animate bar
             setTimeout(() => {
                 bar.style.width = `${confPercent}%`;
             }, 100);
@@ -394,29 +748,97 @@
             
             explanations.forEach((exp, index) => {
                 const percent = (exp.importance * 100).toFixed(1);
+                let valStr = 'N/A';
+                if (exp.value !== undefined) {
+                    if (typeof exp.value === 'number') {
+                        valStr = Number.isInteger(exp.value) ? exp.value : exp.value.toFixed(2);
+                    } else {
+                        valStr = exp.value;
+                    }
+                }
                 
                 const featureHtml = `
                     <div class="xai-feature">
                         <div class="xai-feature-name">
-                            <span>${exp.feature}</span>
+                            <span>${exp.feature}: <strong style="color: white">${valStr}</strong></span>
                             <span>${percent}%</span>
                         </div>
                         <div class="xai-bar-bg">
                             <div class="xai-bar-fill" id="xai-bar-${index}"></div>
                         </div>
+                        <div class="xai-description" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.4rem; font-style: italic;">
+                            ${exp.description || ''}
+                        </div>
                     </div>
                 `;
                 featuresDiv.insertAdjacentHTML('beforeend', featureHtml);
                 
-                // Animate
                 setTimeout(() => {
                     document.getElementById(`xai-bar-${index}`).style.width = `${percent}%`;
                 }, 200 + (index * 100));
             });
         }
 
-        // Init
-        fetchNodes();
+        // Graph Visualization Logic
+        let networkLoaded = false;
+        async function loadGraph() {
+            const loader = document.getElementById('graphLoader');
+            const container = document.getElementById('networkContainer');
+            
+            try {
+                const response = await fetch('/api/graph_data');
+                const data = await response.json();
+
+                const nodes = new vis.DataSet(data.nodes);
+                const edges = new vis.DataSet(data.edges);
+
+                const options = {
+                    nodes: {
+                        shape: 'dot',
+                        size: 16,
+                        font: { color: '#ffffff', size: 12 },
+                        borderWidth: 2
+                    },
+                    edges: {
+                        font: { color: '#94a3b8', size: 10, align: 'middle', strokeWidth: 0 },
+                        arrows: 'to',
+                        color: { color: 'rgba(255,255,255,0.1)', highlight: '#3b82f6' },
+                        smooth: { type: 'continuous' }
+                    },
+                    groups: {
+                        user: { color: { background: '#3b82f6', border: '#2563eb' } },
+                        post: { color: { background: '#8b5cf6', border: '#7c3aed' } },
+                        url: { color: { background: '#10b981', border: '#059669' } }
+                    },
+                    physics: {
+                        barnesHut: { 
+                            gravitationalConstant: -2000, 
+                            centralGravity: 0.1, 
+                            springLength: 100,
+                            springConstant: 0.04
+                        },
+                        stabilization: { iterations: 150 }
+                    },
+                    interaction: {
+                        hover: true,
+                        tooltipDelay: 200
+                    }
+                };
+
+                new vis.Network(container, { nodes, edges }, options);
+                
+                networkLoaded = true;
+                loader.style.display = 'none';
+                container.style.visibility = 'visible';
+                document.getElementById('graphDescription').style.display = 'block';
+                
+            } catch (err) {
+                console.error("Failed to load graph", err);
+                loader.style.display = 'none';
+                container.innerHTML = '<div style="color: var(--danger); text-align: center; padding: 2rem;">Failed to load graph data.</div>';
+                container.style.visibility = 'visible';
+            }
+        }
     </script>
 </body>
 </html>
