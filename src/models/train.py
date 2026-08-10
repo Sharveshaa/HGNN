@@ -26,7 +26,7 @@ def create_masks(data, node_type, train_ratio=0.8):
 
 def train():
     print("Loading Graph...")
-    data = build_hetero_graph()
+    data = build_hetero_graph()[0]
     
     # Normalize features
     for node_type in data.node_types:

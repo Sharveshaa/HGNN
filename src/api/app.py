@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 
 # Adjust path to import from src
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from graph.construct_graph import load_node_features, build_hetero_graph
+from graph.construct_graph import build_hetero_graph
 from models.hgnn import PhishingHGNN
 
 # Load environment variables
@@ -29,7 +29,11 @@ raw_features = {}
 FEATURE_NAMES = {
     'user': ['Followers Count', 'Following Count', 'Account Age (Days)'],
     'post': ['Text Length'],
-    'url': ['URL Length', 'Domain Age (Days)', 'Has SSL Certificate']
+    'url': ['URL Length', 'Entropy', 'Is Shortened', 'Has Suspicious TLD', 'Path Depth', 'Subdomain Count'],
+    'domain': ['Domain Age (Days)', 'Days to Expiry', 'Has MX Records', 'Has SSL'],
+    'ip': ['Dummy'],
+    'asn': ['Dummy'],
+    'registrar': ['Dummy']
 }
 
 @asynccontextmanager
@@ -37,15 +41,19 @@ async def lifespan(app: FastAPI):
     global graph_data, model, node_mappings
     print("Loading Graph for API...")
     
-    # Load mappings
-    user_x, user_y, user_mapping, post_x, post_y, post_mapping, url_x, url_y, url_mapping, posts_df = load_node_features()
-    
-    node_mappings['user_to_idx'] = user_mapping
-    node_mappings['post_to_idx'] = post_mapping
-    node_mappings['url_to_idx'] = url_mapping
-    
     # Build graph
-    graph_data = build_hetero_graph()
+    res = build_hetero_graph()
+    graph_data = res[0]
+    
+    # Load mappings
+    node_mappings['user_to_idx'] = res[1]
+    node_mappings['post_to_idx'] = res[2]
+    node_mappings['url_to_idx'] = res[3]
+    if res[4] is not None:
+        node_mappings['domain_to_idx'] = res[4]
+        node_mappings['ip_to_idx'] = res[5]
+        node_mappings['asn_to_idx'] = res[6]
+        node_mappings['registrar_to_idx'] = res[7]
     
     # Store raw features before normalization
     for node_type in graph_data.node_types:
@@ -89,11 +97,10 @@ def get_nodes():
         keys = list(d.keys())
         return random.sample(keys, min(k, len(keys)))
         
-    return {
-        "users": sample_dict(node_mappings['user_to_idx']),
-        "posts": sample_dict(node_mappings['post_to_idx']),
-        "urls": sample_dict(node_mappings['url_to_idx'])
-    }
+    out = {}
+    for k, v in node_mappings.items():
+        out[k.replace('_to_idx', 's')] = sample_dict(v)
+    return out
 
 @app.get("/api/batch_predict")
 def batch_predict(node_type: str):
@@ -144,7 +151,7 @@ def get_graph_data():
     
     # Invert mappings
     idx_to_id = {}
-    for ntype in ['user', 'post', 'url']:
+    for ntype in graph_data.node_types:
         mapping = node_mappings[f"{ntype}_to_idx"]
         inv_map = {v: k for k, v in mapping.items()}
         idx_to_id[ntype] = inv_map
@@ -196,17 +203,17 @@ def get_subgraph(node_type: str, node_id: str, hops: int = 2):
     edges_list = {et: graph_data[et].edge_index.tolist() for et in graph_data.edge_types}
     
     for _ in range(hops):
-        if len(visited) >= 25:
+        if len(visited) >= 50:
             break
         next_frontier = set()
         for edge_type in graph_data.edge_types:
-            if len(visited) >= 25:
+            if len(visited) >= 50:
                 break
             src_type, rel, dst_type = edge_type
             u_list, v_list = edges_list[edge_type]
             
             for u, v in zip(u_list, v_list):
-                if len(visited) >= 25:
+                if len(visited) >= 50:
                     break
                 if (src_type, u) in frontier and (dst_type, v) not in visited:
                     visited.add((dst_type, v))
@@ -223,7 +230,7 @@ def get_subgraph(node_type: str, node_id: str, hops: int = 2):
         
     # Format for UI
     idx_to_id = {}
-    for ntype in ['user', 'post', 'url']:
+    for ntype in graph_data.node_types:
         idx_to_id[ntype] = {v: k for k, v in node_mappings[f"{ntype}_to_idx"].items()}
         
     nodes = []

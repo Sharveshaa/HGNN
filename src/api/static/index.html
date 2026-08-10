@@ -457,6 +457,10 @@
                     <div class="legend-item"><div class="legend-color" style="background: #3b82f6;"></div> User</div>
                     <div class="legend-item"><div class="legend-color" style="background: #8b5cf6;"></div> Post</div>
                     <div class="legend-item"><div class="legend-color" style="background: #10b981;"></div> URL</div>
+                    <div class="legend-item"><div class="legend-color" style="background: #f59e0b; border-radius: 2px;"></div> Domain</div>
+                    <div class="legend-item"><div class="legend-color" style="background: #ec4899; transform: rotate(45deg);"></div> IP</div>
+                    <div class="legend-item"><div class="legend-color" style="background: #6366f1;"></div> ASN</div>
+                    <div class="legend-item"><div class="legend-color" style="background: #64748b; border-radius: 0;"></div> Registrar</div>
                 </div>
                 
                 <div class="loader" id="graphLoader" style="display: block; margin: 2rem auto;"></div>
@@ -464,7 +468,7 @@
                 
                 <div id="graphDescription" style="margin-top: 1.5rem; color: var(--text-muted); font-size: 0.95rem; line-height: 1.5; padding: 1.5rem; background: rgba(255,255,255,0.03); border-radius: 0.5rem; border-left: 4px solid var(--primary); display: none;">
                     <strong style="color: var(--text-main); display: block; margin-bottom: 0.5rem;">About this Graph</strong> 
-                    This visualization displays the complete structure of the Heterogeneous Graph. Nodes represent different entities (Users, Posts, and URLs). The edges show their relationships, such as users following other users, users sharing posts, and posts containing URLs. By modeling these complex, interconnected interactions, the HGNN can detect coordinated malicious behavior and spam campaigns that traditional isolated models might miss.
+                    This visualization displays the complete structure of the Heterogeneous Graph. Nodes represent social entities (Users, Posts) and infrastructure (URLs, Domains, IPs, ASNs, Registrars). The edges show their relationships, such as users sharing posts, posts containing URLs, and URLs resolving to IPs and ASNs. By modeling this deep infrastructure topology, the HGNN can detect coordinated phishing rings and "guilt by association" hubs that traditional isolated models might miss.
                 </div>
             </div>
         </div>
@@ -588,7 +592,7 @@
             try {
                 const [predictRes, subgraphRes] = await Promise.all([
                     fetch(`/api/predict?node_type=${nodeType}&node_id=${encodeURIComponent(nodeId)}`),
-                    fetch(`/api/subgraph?node_type=${nodeType}&node_id=${encodeURIComponent(nodeId)}&hops=2`)
+                    fetch(`/api/subgraph?node_type=${nodeType}&node_id=${encodeURIComponent(nodeId)}&hops=4`)
                 ]);
                 
                 const data = await predictRes.json();
@@ -688,7 +692,11 @@
                 groups: {
                     user: { color: { background: '#3b82f6', border: '#2563eb' } },
                     post: { color: { background: '#10b981', border: '#059669' }, shape: 'box' },
-                    url: { color: { background: '#8b5cf6', border: '#7c3aed' }, shape: 'triangle' }
+                    url: { color: { background: '#8b5cf6', border: '#7c3aed' }, shape: 'triangle' },
+                    domain: { color: { background: '#f59e0b', border: '#d97706' }, shape: 'hexagon' },
+                    ip: { color: { background: '#ec4899', border: '#db2777' }, shape: 'diamond' },
+                    asn: { color: { background: '#6366f1', border: '#4f46e5' }, shape: 'star' },
+                    registrar: { color: { background: '#64748b', border: '#475569' }, shape: 'square' }
                 }
             };
             
@@ -808,7 +816,11 @@
                     groups: {
                         user: { color: { background: '#3b82f6', border: '#2563eb' } },
                         post: { color: { background: '#8b5cf6', border: '#7c3aed' } },
-                        url: { color: { background: '#10b981', border: '#059669' } }
+                        url: { color: { background: '#10b981', border: '#059669' } },
+                        domain: { color: { background: '#f59e0b', border: '#d97706' }, shape: 'hexagon' },
+                        ip: { color: { background: '#ec4899', border: '#db2777' }, shape: 'diamond' },
+                        asn: { color: { background: '#6366f1', border: '#4f46e5' }, shape: 'star' },
+                        registrar: { color: { background: '#64748b', border: '#475569' }, shape: 'square' }
                     },
                     physics: {
                         barnesHut: { 
