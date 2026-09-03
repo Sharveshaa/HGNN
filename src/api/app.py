@@ -184,8 +184,8 @@ def get_graph_data():
     return {"nodes": nodes, "edges": edges}
 
 @app.get("/api/subgraph")
-def get_subgraph(node_type: str, node_id: str, hops: int = 2):
-    global graph_data, node_mappings
+def get_subgraph(node_type: str, node_id: str):
+    global graph_data, model, node_mappings
     
     if node_type not in ['user', 'post', 'url']:
         return JSONResponse(status_code=400, content={"error": "Invalid node type"})
@@ -196,37 +196,62 @@ def get_subgraph(node_type: str, node_id: str, hops: int = 2):
         
     target_idx = node_mappings[mapping_key][node_id]
     
-    # K-Hop BFS
-    frontier = set([(node_type, target_idx)])
-    visited = set([(node_type, target_idx)])
+    import torch
     
+    # 1. Enable gradients for XAI
+    for ntype in graph_data.node_types:
+        graph_data[ntype].x.requires_grad = True
+        
+    # 2. Forward pass
+    out = model(graph_data.x_dict, graph_data.edge_index_dict)
+    logits = out[node_type][target_idx]
+    probs = torch.softmax(logits, dim=0)
+    pred_class = 1 if float(probs[1]) > 0.5 else 0
+    
+    # 3. Backward pass
+    model.zero_grad()
+    logits[pred_class].backward()
+    
+    # 4. Collect saliency scores for all nodes
+    node_saliency = {}
+    for ntype in graph_data.node_types:
+        if graph_data[ntype].x.grad is not None:
+            grads = graph_data[ntype].x.grad.abs().sum(dim=1)
+            for i, score in enumerate(grads.tolist()):
+                node_saliency[(ntype, i)] = score
+                
     edges_list = {et: graph_data[et].edge_index.tolist() for et in graph_data.edge_types}
     
-    for _ in range(hops):
+    # Build adjacency list for undirected exploration
+    adj = {}
+    for edge_type in graph_data.edge_types:
+        src_type, rel, dst_type = edge_type
+        u_list, v_list = edges_list[edge_type]
+        for u, v in zip(u_list, v_list):
+            adj.setdefault((src_type, u), []).append((dst_type, v))
+            adj.setdefault((dst_type, v), []).append((src_type, u))
+            
+    # 5. DFS guided by gradient saliency
+    visited = set()
+    visited.add((node_type, target_idx))
+    
+    def dfs(node):
         if len(visited) >= 50:
-            break
-        next_frontier = set()
-        for edge_type in graph_data.edge_types:
+            return
+        neighbors = adj.get(node, [])
+        neighbors = [n for n in neighbors if n not in visited]
+        # Sort neighbors by their saliency (highest first)
+        neighbors.sort(key=lambda n: node_saliency.get(n, 0.0), reverse=True)
+        
+        for n in neighbors:
             if len(visited) >= 50:
                 break
-            src_type, rel, dst_type = edge_type
-            u_list, v_list = edges_list[edge_type]
-            
-            for u, v in zip(u_list, v_list):
-                if len(visited) >= 50:
-                    break
-                if (src_type, u) in frontier and (dst_type, v) not in visited:
-                    visited.add((dst_type, v))
-                    next_frontier.add((dst_type, v))
-                if (dst_type, v) in frontier and (src_type, u) not in visited:
-                    visited.add((src_type, u))
-                    next_frontier.add((src_type, u))
-        
-        frontier = next_frontier
-            
-    import torch
-    with torch.no_grad():
-        out = model(graph_data.x_dict, graph_data.edge_index_dict)
+            # Only explore paths that actually contributed (non-zero gradient)
+            if node_saliency.get(n, 0.0) > 1e-6:
+                visited.add(n)
+                dfs(n)
+                
+    dfs((node_type, target_idx))
         
     # Format for UI
     idx_to_id = {}
@@ -296,7 +321,7 @@ def generate_dynamic_xai(feature_data, prediction, confidence):
     }
     
     data = {
-        "model": "llama-3.1-8b-instant",
+        "model": "qwen/qwen3.6-27b",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.3
     }
@@ -426,4 +451,4 @@ os.makedirs(static_dir, exist_ok=True)
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("app:app", host="0.0.0.0", port=8080, reload=False)

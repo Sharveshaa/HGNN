@@ -592,7 +592,7 @@
             try {
                 const [predictRes, subgraphRes] = await Promise.all([
                     fetch(`/api/predict?node_type=${nodeType}&node_id=${encodeURIComponent(nodeId)}`),
-                    fetch(`/api/subgraph?node_type=${nodeType}&node_id=${encodeURIComponent(nodeId)}&hops=4`)
+                    fetch(`/api/subgraph?node_type=${nodeType}&node_id=${encodeURIComponent(nodeId)}`)
                 ]);
                 
                 const data = await predictRes.json();

@@ -40,7 +40,7 @@ def train():
 
     # 2 output classes: Benign (0) and Phishing (1)
     model = PhishingHGNN(hidden_channels=16, out_channels=2, metadata=data.metadata())
-    optimizer = Adam(model.parameters(), lr=0.01)
+    optimizer = Adam(model.parameters(), lr=0.01, weight_decay=1e-3)
     
     print("\nStarting Training...")
     model.train()
