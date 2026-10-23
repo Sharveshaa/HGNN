@@ -15,3 +15,5 @@ A multimodal phishing detection system using Heterogeneous Graph Neural Networks
 10. **Phase 10**: Backend Development
 11. **Phase 11**: Frontend
 12. **Phase 12**: Deployment
+
+Created by veshaaa
