@@ -42,18 +42,29 @@ async def lifespan(app: FastAPI):
     print("Loading Graph for API...")
     
     # Build graph
-    res = build_hetero_graph()
+    res = build_hetero_graph(use_rich_features=False, include_campaigns=False)
     graph_data = res[0]
     
     # Load mappings
-    node_mappings['user_to_idx'] = res[1]
-    node_mappings['post_to_idx'] = res[2]
-    node_mappings['url_to_idx'] = res[3]
-    if res[4] is not None:
-        node_mappings['domain_to_idx'] = res[4]
-        node_mappings['ip_to_idx'] = res[5]
-        node_mappings['asn_to_idx'] = res[6]
-        node_mappings['registrar_to_idx'] = res[7]
+    if isinstance(res[1], dict):
+        node_mappings['user_to_idx'] = res[1].get('user', {})
+        node_mappings['post_to_idx'] = res[1].get('post', {})
+        node_mappings['url_to_idx'] = res[1].get('url', {})
+        node_mappings['domain_to_idx'] = res[1].get('domain', {})
+        node_mappings['ip_to_idx'] = res[1].get('ip', {})
+        node_mappings['asn_to_idx'] = res[1].get('asn', {})
+        node_mappings['registrar_to_idx'] = res[1].get('registrar', {})
+        if 'campaign' in res[1]:
+            node_mappings['campaign_to_idx'] = res[1].get('campaign', {})
+    else:
+        node_mappings['user_to_idx'] = res[1]
+        node_mappings['post_to_idx'] = res[2] if len(res) > 2 else {}
+        node_mappings['url_to_idx'] = res[3] if len(res) > 3 else {}
+        if len(res) > 7 and res[4] is not None:
+            node_mappings['domain_to_idx'] = res[4]
+            node_mappings['ip_to_idx'] = res[5]
+            node_mappings['asn_to_idx'] = res[6]
+            node_mappings['registrar_to_idx'] = res[7]
     
     # Store raw features before normalization
     for node_type in graph_data.node_types:
@@ -69,7 +80,11 @@ async def lifespan(app: FastAPI):
     model = PhishingHGNN(hidden_channels=16, out_channels=2, metadata=graph_data.metadata())
     
     if os.path.exists(model_path):
-        model.load_state_dict(torch.load(model_path))
+        try:
+            model.load_state_dict(torch.load(model_path, map_location='cpu'))
+        except Exception as e:
+            print(f"Strict loading failed ({e}). Loading with strict=False...")
+            model.load_state_dict(torch.load(model_path, map_location='cpu'), strict=False)
         model.eval()
         print(f"Model loaded successfully from {model_path}.")
     else:
@@ -321,7 +336,7 @@ def generate_dynamic_xai(feature_data, prediction, confidence):
     }
     
     data = {
-        "model": "qwen/qwen3.6-27b",
+        "model": "qwen/qwen3.8-27b",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.3
     }
@@ -329,14 +344,21 @@ def generate_dynamic_xai(feature_data, prediction, confidence):
     try:
         response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data, timeout=8)
         response.raise_for_status()
-        content = response.json()['choices'][0]['message']['content']
+        content = response.json()['choices'][0]['message']['content'].strip()
+        if content.startswith("```json"):
+            content = content[7:]
+        elif content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
         return json.loads(content)
-    except requests.exceptions.RequestException as e:
-        if hasattr(e, 'response') and e.response is not None:
+    except Exception as e:
+        if hasattr(e, 'response') and getattr(e, 'response', None) is not None:
             print(f"LLM API Error: {e}\nResponse: {e.response.text}")
         else:
             print(f"LLM API Error: {e}")
-        return {item["feature"]: f"Dynamic explanation unavailable." for item in feature_data}
+        return {item["feature"]: "Dynamic explanation unavailable." for item in feature_data}
 
 @app.get("/api/predict")
 def predict(node_type: str, node_id: str):
@@ -451,4 +473,4 @@ os.makedirs(static_dir, exist_ok=True)
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8080, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=8080)

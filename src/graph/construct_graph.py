@@ -38,7 +38,10 @@ def build_hetero_graph(
     raw_dir="data/raw",
     processed_dir="data/processed",
     use_rich_features=True,
+    include_campaigns=None,
 ):
+    if include_campaigns is None:
+        include_campaigns = use_rich_features
     """
     Build the complete heterogeneous graph.
 
@@ -120,8 +123,13 @@ def build_hetero_graph(
         print(f"  [url] Rich features: {data['url'].x.shape}")
     else:
         # Basic URL features
-        urls_df['url_length'] = urls_df[url_id_col].apply(lambda u: len(str(u)))
-        data['url'].x = torch.tensor(urls_df[['url_length']].values, dtype=torch.float)
+        url_cols = ['url_length', 'url_entropy', 'is_shortened', 'has_suspicious_tld', 'path_depth', 'subdomain_count']
+        if all(col in urls_df.columns for col in url_cols):
+            url_features = urls_df[url_cols].fillna(0).values
+        else:
+            urls_df['url_length'] = urls_df[url_id_col].apply(lambda u: len(str(u)))
+            url_features = urls_df[['url_length']].values
+        data['url'].x = torch.tensor(url_features, dtype=torch.float)
         print(f"  [url] Basic features: {data['url'].x.shape}")
 
     url_label_col = 'label' if 'label' in urls_df.columns else 'Label'
@@ -249,40 +257,42 @@ def build_hetero_graph(
         data['user', 'shares', 'post'].edge_index = torch.empty((2, 0), dtype=torch.long)
 
     # (user, mentions, user) — NEW
-    mentions_file = os.path.join(raw_dir, "mentions.csv")
-    if os.path.exists(mentions_file):
-        mentions_df = pd.read_csv(mentions_file)
-        src_m = [user_mapping[uid] for uid in mentions_df['source_user_id'] if uid in user_mapping]
-        dst_m = [user_mapping[uid] for uid in mentions_df['target_user_id'] if uid in user_mapping]
-        min_len = min(len(src_m), len(dst_m))
-        data['user', 'mentions', 'user'].edge_index = torch.tensor(
-            [src_m[:min_len], dst_m[:min_len]], dtype=torch.long
-        )
-        print(f"  (user, mentions, user): {min_len} edges")
-    else:
-        data['user', 'mentions', 'user'].edge_index = torch.empty((2, 0), dtype=torch.long)
+    if include_campaigns:
+        mentions_file = os.path.join(raw_dir, "mentions.csv")
+        if os.path.exists(mentions_file):
+            mentions_df = pd.read_csv(mentions_file)
+            src_m = [user_mapping[uid] for uid in mentions_df['source_user_id'] if uid in user_mapping]
+            dst_m = [user_mapping[uid] for uid in mentions_df['target_user_id'] if uid in user_mapping]
+            min_len = min(len(src_m), len(dst_m))
+            data['user', 'mentions', 'user'].edge_index = torch.tensor(
+                [src_m[:min_len], dst_m[:min_len]], dtype=torch.long
+            )
+            print(f"  (user, mentions, user): {min_len} edges")
+        else:
+            data['user', 'mentions', 'user'].edge_index = torch.empty((2, 0), dtype=torch.long)
 
     # (post, similar_to, post) — NEW: content similarity edges
-    sim_edges = precomputed.get('similarity_edges')
-    if sim_edges is not None and len(sim_edges) > 0:
-        if sim_edges.ndim == 2 and sim_edges.shape[1] == 2:
-            src_sim = sim_edges[:, 0].tolist()
-            dst_sim = sim_edges[:, 1].tolist()
+    if include_campaigns:
+        sim_edges = precomputed.get('similarity_edges')
+        if sim_edges is not None and len(sim_edges) > 0:
+            if sim_edges.ndim == 2 and sim_edges.shape[1] == 2:
+                src_sim = sim_edges[:, 0].tolist()
+                dst_sim = sim_edges[:, 1].tolist()
+            else:
+                src_sim, dst_sim = [], []
+            # Make bidirectional
+            all_src = src_sim + dst_sim
+            all_dst = dst_sim + src_sim
+            data['post', 'similar_to', 'post'].edge_index = torch.tensor(
+                [all_src, all_dst], dtype=torch.long
+            )
+            print(f"  (post, similar_to, post): {len(all_src)} edges")
         else:
-            src_sim, dst_sim = [], []
-        # Make bidirectional
-        all_src = src_sim + dst_sim
-        all_dst = dst_sim + src_sim
-        data['post', 'similar_to', 'post'].edge_index = torch.tensor(
-            [all_src, all_dst], dtype=torch.long
-        )
-        print(f"  (post, similar_to, post): {len(all_src)} edges")
-    else:
-        data['post', 'similar_to', 'post'].edge_index = torch.empty((2, 0), dtype=torch.long)
+            data['post', 'similar_to', 'post'].edge_index = torch.empty((2, 0), dtype=torch.long)
 
     # Infrastructure edges
-    if 'domain' in enriched_urls.columns if 'enriched_urls' in dir() else False:
-        _build_infra_edges(data, enriched_urls, url_mapping, domain_mapping,
+    if 'domain' in urls_df.columns:
+        _build_infra_edges(data, urls_df, url_mapping, domain_mapping,
                           ip_mapping, asn_mapping, registrar_mapping)
     else:
         # Minimal infrastructure edges
@@ -295,80 +305,81 @@ def build_hetero_graph(
     # CAMPAIGN NODES — NEW
     # ══════════════════════════════════════════════════════════
     campaign_mapping = {}
-    campaigns_file = os.path.join(raw_dir, "campaigns.csv")
-    if os.path.exists(campaigns_file):
-        print("\nBuilding campaign nodes...")
-        campaigns_df = pd.read_csv(campaigns_file)
+    if include_campaigns:
+        campaigns_file = os.path.join(raw_dir, "campaigns.csv")
+        if os.path.exists(campaigns_file):
+            print("\nBuilding campaign nodes...")
+            campaigns_df = pd.read_csv(campaigns_file)
 
-        num_campaigns = len(campaigns_df)
-        campaign_feature_dim = 16
+            num_campaigns = len(campaigns_df)
+            campaign_feature_dim = 16
 
-        # Build campaign features from member aggregation
-        campaign_features = np.zeros((num_campaigns, campaign_feature_dim), dtype=np.float32)
+            # Build campaign features from member aggregation
+            campaign_features = np.zeros((num_campaigns, campaign_feature_dim), dtype=np.float32)
 
-        user_x = data['user'].x.numpy()
-        post_x = data['post'].x.numpy()
+            user_x = data['user'].x.numpy()
+            post_x = data['post'].x.numpy()
 
-        user_campaign_src, user_campaign_dst = [], []
-        post_campaign_src, post_campaign_dst = [], []
+            user_campaign_src, user_campaign_dst = [], []
+            post_campaign_src, post_campaign_dst = [], []
 
-        for c_idx, row in campaigns_df.iterrows():
-            cid = row['campaign_id']
-            campaign_mapping[cid] = c_idx
+            for c_idx, row in campaigns_df.iterrows():
+                cid = row['campaign_id']
+                campaign_mapping[cid] = c_idx
 
-            # Aggregate user features
-            if pd.notna(row.get('user_ids', '')):
-                member_uids = str(row['user_ids']).split(';')
-                member_indices = [user_mapping[uid] for uid in member_uids if uid in user_mapping]
-                if member_indices:
-                    member_feats = user_x[member_indices]
-                    pooled = member_feats.mean(axis=0)
-                    dim = min(campaign_feature_dim, len(pooled))
-                    campaign_features[c_idx, :dim] = pooled[:dim]
+                # Aggregate user features
+                if pd.notna(row.get('user_ids', '')):
+                    member_uids = str(row['user_ids']).split(';')
+                    member_indices = [user_mapping[uid] for uid in member_uids if uid in user_mapping]
+                    if member_indices:
+                        member_feats = user_x[member_indices]
+                        pooled = member_feats.mean(axis=0)
+                        dim = min(campaign_feature_dim, len(pooled))
+                        campaign_features[c_idx, :dim] = pooled[:dim]
 
-                for uid in member_uids:
-                    if uid in user_mapping:
-                        user_campaign_src.append(user_mapping[uid])
-                        user_campaign_dst.append(c_idx)
+                    for uid in member_uids:
+                        if uid in user_mapping:
+                            user_campaign_src.append(user_mapping[uid])
+                            user_campaign_dst.append(c_idx)
 
-            # Aggregate post features
-            if pd.notna(row.get('post_ids', '')):
-                member_pids = str(row['post_ids']).split(';')
-                for pid in member_pids:
-                    if pid in post_mapping:
-                        post_campaign_src.append(post_mapping[pid])
-                        post_campaign_dst.append(c_idx)
+                # Aggregate post features
+                if pd.notna(row.get('post_ids', '')):
+                    member_pids = str(row['post_ids']).split(';')
+                    for pid in member_pids:
+                        if pid in post_mapping:
+                            post_campaign_src.append(post_mapping[pid])
+                            post_campaign_dst.append(c_idx)
 
-        data['campaign'].x = torch.tensor(campaign_features, dtype=torch.float)
-        data['campaign'].y = torch.tensor(
-            campaigns_df['risk_label'].values, dtype=torch.long
-        ) if 'risk_label' in campaigns_df.columns else torch.zeros(num_campaigns, dtype=torch.long)
+            data['campaign'].x = torch.tensor(campaign_features, dtype=torch.float)
+            data['campaign'].y = torch.tensor(
+                campaigns_df['risk_label'].values, dtype=torch.long
+            ) if 'risk_label' in campaigns_df.columns else torch.zeros(num_campaigns, dtype=torch.long)
 
-        # Campaign membership edges
-        if user_campaign_src:
-            data['user', 'member_of', 'campaign'].edge_index = torch.tensor(
-                [user_campaign_src, user_campaign_dst], dtype=torch.long
-            )
-            print(f"  (user, member_of, campaign): {len(user_campaign_src)} edges")
+            # Campaign membership edges
+            if user_campaign_src:
+                data['user', 'member_of', 'campaign'].edge_index = torch.tensor(
+                    [user_campaign_src, user_campaign_dst], dtype=torch.long
+                )
+                print(f"  (user, member_of, campaign): {len(user_campaign_src)} edges")
+            else:
+                data['user', 'member_of', 'campaign'].edge_index = torch.empty((2, 0), dtype=torch.long)
+
+            if post_campaign_src:
+                data['post', 'part_of', 'campaign'].edge_index = torch.tensor(
+                    [post_campaign_src, post_campaign_dst], dtype=torch.long
+                )
+                print(f"  (post, part_of, campaign): {len(post_campaign_src)} edges")
+            else:
+                data['post', 'part_of', 'campaign'].edge_index = torch.empty((2, 0), dtype=torch.long)
+
+            print(f"  [campaign] {data['campaign'].x.shape}")
         else:
+            # No campaigns file — create minimal campaign node
+            data['campaign'].x = torch.ones((1, 16), dtype=torch.float)
+            data['campaign'].y = torch.zeros(1, dtype=torch.long)
+            campaign_mapping = {'C00000': 0}
             data['user', 'member_of', 'campaign'].edge_index = torch.empty((2, 0), dtype=torch.long)
-
-        if post_campaign_src:
-            data['post', 'part_of', 'campaign'].edge_index = torch.tensor(
-                [post_campaign_src, post_campaign_dst], dtype=torch.long
-            )
-            print(f"  (post, part_of, campaign): {len(post_campaign_src)} edges")
-        else:
             data['post', 'part_of', 'campaign'].edge_index = torch.empty((2, 0), dtype=torch.long)
-
-        print(f"  [campaign] {data['campaign'].x.shape}")
-    else:
-        # No campaigns file — create minimal campaign node
-        data['campaign'].x = torch.ones((1, 16), dtype=torch.float)
-        data['campaign'].y = torch.zeros(1, dtype=torch.long)
-        campaign_mapping = {'C00000': 0}
-        data['user', 'member_of', 'campaign'].edge_index = torch.empty((2, 0), dtype=torch.long)
-        data['post', 'part_of', 'campaign'].edge_index = torch.empty((2, 0), dtype=torch.long)
 
     # ══════════════════════════════════════════════════════════
     # SUMMARY
